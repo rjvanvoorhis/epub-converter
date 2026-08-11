@@ -111,16 +111,18 @@ class MockVoiceBoxService:
             ]
         return self._profiles
 
-    def generate_speech(self, text: str, profile_id: str, language: str) -> bytes:
+    def generate_speech(
+        self, text: str, profile_id: str, language: str, engine: str = "kokoro"
+    ) -> bytes:
         """Generate speech (returns fake audio data)."""
-        self._generate_calls.append((text, profile_id, language))
+        self._generate_calls.append((text, profile_id, language, engine))
         if not text.strip():
             raise ValueError("Text cannot be empty")
         if not profile_id.strip():
             raise ValueError("profile_id cannot be empty")
         return self._audio_data
 
-    def get_generate_calls(self) -> list[tuple[str, str, str]]:
+    def get_generate_calls(self) -> list[tuple[str, str, str, str]]:
         """Get all generate calls for verification."""
         return self._generate_calls
 

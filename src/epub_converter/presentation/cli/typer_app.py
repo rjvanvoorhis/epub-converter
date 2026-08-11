@@ -64,6 +64,12 @@ def convert_to_audiobook(
         "-c",
         help="Maximum characters per audio chunk",
     ),
+    engine: str = typer.Option(
+        "kokoro",
+        "--engine",
+        "-e",
+        help="Speech synthesis engine to use",
+    ),
 ) -> None:
     """Convert an EPUB file to an audiobook in MP3 format.
 
@@ -86,6 +92,7 @@ def convert_to_audiobook(
             voice_profile_id=voice_profile_id,
             language=language,
             chunk_size=chunk_size,
+            engine=engine,
         )
 
         output_dto = use_case.execute(input_dto)

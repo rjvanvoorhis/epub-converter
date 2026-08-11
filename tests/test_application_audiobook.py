@@ -224,9 +224,10 @@ class TestConvertEPUBToAudiobookUseCase:
             assert len(generate_calls) > 0
 
             # Verify all calls have correct profile and language
-            for text, profile_id, language in generate_calls:
+            for text, profile_id, language, engine in generate_calls:
                 assert profile_id == "voice_1"
                 assert language == "en"
+                assert engine == "kokoro"
                 assert len(text) > 0
 
     def test_convert_epub_calls_text_chunker(self, tmp_path: Path) -> None:

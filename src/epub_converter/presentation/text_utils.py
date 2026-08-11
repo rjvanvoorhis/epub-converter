@@ -104,3 +104,18 @@ def strip_html_tags(html_content: str) -> str:
     except Exception:
         # If parsing fails, return normalized original content
         return normalize_unicode_to_ascii(html_content)
+
+
+def normalize_text_characters(text: str) -> str:
+    """Normalize text by removing/converting Unicode characters.
+
+    This is a convenience function that applies Unicode-to-ASCII normalization
+    to already plain text (without HTML tags).
+
+    Args:
+        text: Plain text to normalize
+
+    Returns:
+        Text with Unicode characters converted to ASCII equivalents
+    """
+    return normalize_unicode_to_ascii(text)

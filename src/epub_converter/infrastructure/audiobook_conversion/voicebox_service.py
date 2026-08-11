@@ -65,13 +65,16 @@ class VoiceBoxApiService:
         except requests.RequestException as e:
             raise RuntimeError(f"Failed to retrieve voice profiles: {e}")
 
-    def generate_speech(self, text: str, profile_id: str, language: str) -> bytes:
+    def generate_speech(
+        self, text: str, profile_id: str, language: str, engine: str = "kokoro"
+    ) -> bytes:
         """Generate speech audio for the given text.
 
         Args:
             text: The text to convert to speech.
             profile_id: The ID of the voice profile to use.
             language: The language code (e.g., 'en', 'es').
+            engine: The speech synthesis engine to use (default: 'kokoro').
 
         Returns:
             The generated audio data in MP3 format.
@@ -90,6 +93,7 @@ class VoiceBoxApiService:
                 "text": text,
                 "profile_id": profile_id,
                 "language": language,
+                "engine": engine,
             }
 
             response = requests.post(

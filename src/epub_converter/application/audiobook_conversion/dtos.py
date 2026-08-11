@@ -5,22 +5,35 @@ DTOs are used to transfer data between layers without exposing domain entities.
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 
 @dataclass
 class ConvertEPUBToAudiobookInput:
-    """Input DTO for converting EPUB to audiobook."""
+    """Input DTO for converting EPUB or text directory to audiobook."""
 
-    epub_file_path: Path
     output_file_path: Path
     voice_profile_id: str
+    epub_file_path: Optional[Path] = None
+    text_directory_path: Optional[Path] = None
     language: str = "en"
     chunk_size: int = 45000
+    engine: str = "kokoro"
 
     def __post_init__(self) -> None:
         """Validate input."""
-        if not self.epub_file_path.exists():
+        # Must have exactly one of epub_file_path or text_directory_path
+        if self.epub_file_path is None and self.text_directory_path is None:
+            raise ValueError("Must provide either epub_file_path or text_directory_path")
+        if self.epub_file_path is not None and self.text_directory_path is not None:
+            raise ValueError("Cannot provide both epub_file_path and text_directory_path")
+
+        # Validate the provided path exists
+        if self.epub_file_path is not None and not self.epub_file_path.exists():
             raise ValueError(f"EPUB file not found: {self.epub_file_path}")
+        if self.text_directory_path is not None and not self.text_directory_path.is_dir():
+            raise ValueError(f"Text directory not found or not a directory: {self.text_directory_path}")
+
         if self.chunk_size <= 0:
             raise ValueError("chunk_size must be positive")
 

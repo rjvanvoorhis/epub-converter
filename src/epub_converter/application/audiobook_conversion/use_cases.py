@@ -13,6 +13,10 @@ from epub_converter.domain.audiobook_conversion.interfaces import (
 )
 from epub_converter.domain.audiobook_conversion.value_objects import AudioFile
 from epub_converter.domain.epub_extraction.interfaces import EPUBRepository
+from epub_converter.presentation.text_utils import (
+    strip_html_tags,
+    normalize_text_characters,
+)
 
 from .dtos import (
     ConvertEPUBToAudiobookInput,
@@ -58,7 +62,9 @@ class ConvertEPUBToAudiobookUseCase:
     def execute(
         self, input_dto: ConvertEPUBToAudiobookInput
     ) -> ConvertEPUBToAudiobookOutput:
-        """Execute the EPUB to audiobook conversion.
+        """Execute the EPUB/text to audiobook conversion.
+
+        Supports both EPUB files (with HTML stripping) and text directories.
 
         Args:
             input_dto: Input containing file paths and voice settings.
@@ -70,29 +76,40 @@ class ConvertEPUBToAudiobookUseCase:
             ValueError: If input is invalid.
             RuntimeError: If conversion fails at any step.
         """
-        # Load the EPUB file
-        from epub_converter.domain.epub_extraction.value_objects import FilePath
-
-        epub_file = self._epub_repository.load(FilePath(input_dto.epub_file_path))
-
         # Prepare output directory
         output_dir = input_dto.output_file_path.parent
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Get chapters from either EPUB or text directory
+        if input_dto.epub_file_path is not None:
+            chapters_to_process = self._load_chapters_from_epub(
+                input_dto.epub_file_path
+            )
+        else:
+            chapters_to_process = self._load_chapters_from_text_directory(
+                input_dto.text_directory_path
+            )
+
         # Process each chapter
         chapter_audio_files: list[Path] = []
 
-        for chapter_index, chapter in enumerate(epub_file.chapters):
+        for chapter_index, chapter in enumerate(chapters_to_process):
+            # Clean the text (HTML stripping and character normalization)
+            clean_content = normalize_text_characters(strip_html_tags(chapter["content"]))
+
             # Chunk the chapter text
             chunks = self._text_chunker.chunk_text(
-                chapter.content, input_dto.chunk_size
+                clean_content, input_dto.chunk_size
             )
 
             # Generate audio for each chunk
             chunk_audio_files: list[Path] = []
             for chunk in chunks:
                 audio_data = self._voicebox_service.generate_speech(
-                    chunk.text, input_dto.voice_profile_id, input_dto.language
+                    chunk.text,
+                    input_dto.voice_profile_id,
+                    input_dto.language,
+                    input_dto.engine,
                 )
 
                 # Save chunk audio
@@ -130,9 +147,54 @@ class ConvertEPUBToAudiobookUseCase:
         return ConvertEPUBToAudiobookOutput(
             output_file_path=input_dto.output_file_path,
             total_duration_seconds=total_duration,
-            chapter_count=len(epub_file.chapters),
+            chapter_count=len(chapters_to_process),
             voice_profile_id=input_dto.voice_profile_id,
         )
+
+    def _load_chapters_from_epub(
+        self, epub_path: Path
+    ) -> list[dict[str, str]]:
+        """Load and extract chapters from an EPUB file.
+
+        Args:
+            epub_path: Path to the EPUB file
+
+        Returns:
+            List of chapters with 'title' and 'content' keys
+        """
+        from epub_converter.domain.epub_extraction.value_objects import FilePath
+
+        epub_file = self._epub_repository.load(FilePath(epub_path))
+
+        chapters = []
+        for chapter in epub_file.chapters:
+            chapters.append({"title": chapter.title, "content": chapter.content})
+
+        return chapters
+
+    def _load_chapters_from_text_directory(
+        self, text_dir: Path
+    ) -> list[dict[str, str]]:
+        """Load chapters from a directory of text files.
+
+        Args:
+            text_dir: Path to directory containing .txt files
+
+        Returns:
+            List of chapters with 'title' and 'content' keys
+        """
+        from epub_converter.infrastructure.audiobook_conversion.text_file_reader import (
+            TextFileReaderService,
+        )
+
+        reader = TextFileReaderService()
+        file_chapters = reader.read_chapters(text_dir)
+
+        chapters = []
+        for file_chapter in file_chapters:
+            chapters.append({"title": file_chapter.title, "content": file_chapter.content})
+
+        return chapters
 
 
 class ListVoiceProfilesUseCase:
