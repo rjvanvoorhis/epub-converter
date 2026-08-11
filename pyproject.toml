@@ -1,0 +1,33 @@
+[project]
+name = "epub-converter"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Ryan Van Voorhis", email = "rvanvoorhis@intraprise.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "ebooklib>=0.20",
+    "requests>=2.34.2",
+    "ruff>=0.16.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+]
+
+[project.scripts]
+epub-converter = "epub_converter:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
