@@ -152,15 +152,19 @@ for profile in output_dto.profiles:
 
 ```bash
 # List available voice profiles
-epub-converter list-voice-profiles
+epub-converter list-voices
 
 # Convert EPUB to audiobook
-epub-converter convert-epub-to-audiobook \
-  --epub-file /path/to/book.epub \
-  --output-file /path/to/book_audiobook.mp3 \
-  --voice-profile-id abc123 \
+epub-converter convert-to-audiobook /path/to/book.epub \
+  --output /path/to/book_audiobook.mp3 \
+  --profile abc123 \
   --language en \
   --chunk-size 45000
+
+# Convert a directory of chapter .txt files (e.g. from extract-chapters) to audiobook
+epub-converter convert-to-audiobook --text-dir /path/to/chapters/ \
+  --output /path/to/book_audiobook.mp3 \
+  --profile abc123
 ```
 
 ## Dependencies
@@ -169,8 +173,14 @@ epub-converter convert-epub-to-audiobook \
 
 - **VoiceBox**: REST API service at `http://127.0.0.1:17493`
   - Endpoint: `GET /profiles` - List available voice profiles
-  - Endpoint: `POST /generate` - Generate speech from text
-  - Response: MP3 audio data or JSON with base64-encoded audio
+  - Endpoint: `POST /generate` - Enqueue speech generation from text; returns a
+    `GenerationResponse` with an `id` and an in-progress `status`
+    (`queued`, `loading_model`, `generating`, ...)
+  - Endpoint: `GET /generate/{id}/status` - Server-sent-events stream of
+    status snapshots; polled until a terminal status (`completed`,
+    `failed`, `error`, `cancelled`) is reached
+  - Endpoint: `GET /history/{id}/export-audio` - Download the finished MP3
+    once the generation has completed
 
 ### System Requirements
 

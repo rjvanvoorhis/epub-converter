@@ -192,14 +192,17 @@ Sequence: EPUB to Audiobook Conversion
 │                     "language": "en"
 │                 }
 │             )
+│             └─→ Returns GenerationResponse{id, status="generating", ...}
+│                 immediately (generation runs asynchronously)
 │
-│ [8]         VoiceBox Service processes request:
-│             └─→ Find voice profile
-│             └─→ Generate speech
-│             └─→ Encode as MP3
-│             └─→ Return response
+│ [8]         GET /generate/{id}/status (server-sent-events stream)
+│             └─→ Watch status snapshots: queued -> loading_model ->
+│                 generating -> completed (or failed/error/cancelled)
+│             └─→ Reopen the stream on transient drops until a terminal
+│                 status arrives or the timeout elapses
 │
-│ [9]         Return: bytes (MP3 data)
+│ [9]         GET /history/{id}/export-audio
+│             └─→ Return: bytes (MP3 data)
 │             └─→ Save to chunk_0.mp3
 │
 │ [10]        Repeat for all chunks of chapter
