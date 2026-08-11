@@ -134,3 +134,12 @@ class Container:
             The configured use case.
         """
         return self._extract_chapter_use_case
+
+    @property
+    def list_voice_profiles_use_case(self) -> ListVoiceProfilesUseCase:
+        """Get the list voice profiles use case.
+
+        Returns:
+            The configured use case.
+        """
+        return self._list_voices_use_case
