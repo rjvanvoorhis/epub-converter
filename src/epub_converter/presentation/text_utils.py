@@ -3,9 +3,26 @@
 from html.parser import HTMLParser
 from typing import Optional
 
+# Tags whose boundaries represent real line/paragraph breaks. Text inside
+# inline tags (<em>, <span>, <a>, <b>, <i>, ...) is joined with a space
+# instead, since those tags routinely split a single sentence across
+# multiple handle_data() calls without indicating any actual line break.
+_BLOCK_TAGS = frozenset(
+    {
+        "p", "div", "br", "hr",
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "li", "ul", "ol", "blockquote",
+        "tr", "table", "section", "article", "header", "footer",
+    }
+)
+
 
 class HTMLStripper(HTMLParser):
-    """HTML parser that extracts plain text from HTML content."""
+    """HTML parser that extracts plain text from HTML content.
+
+    Line breaks are only introduced at block-level tag boundaries; text
+    split across inline tags is joined into a single line.
+    """
 
     def __init__(self) -> None:
         """Initialize the HTML stripper."""
@@ -13,16 +30,35 @@ class HTMLStripper(HTMLParser):
         self.reset()
         self.strict = False
         self.convert_charrefs = True
-        self.text_parts: list[str] = []
+        self._lines: list[str] = []
+        self._current_line: list[str] = []
+
+    def _flush_line(self) -> None:
+        """End the current line, if it has any text in it."""
+        if self._current_line:
+            self._lines.append(" ".join(self._current_line))
+            self._current_line = []
 
     def handle_data(self, data: str) -> None:
         """Handle text data from HTML."""
-        if data.strip():
-            self.text_parts.append(data.strip())
+        stripped = data.strip()
+        if stripped:
+            self._current_line.append(stripped)
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        """Break the current line on block-level start tags."""
+        if tag.lower() in _BLOCK_TAGS:
+            self._flush_line()
+
+    def handle_endtag(self, tag: str) -> None:
+        """Break the current line on block-level end tags."""
+        if tag.lower() in _BLOCK_TAGS:
+            self._flush_line()
 
     def get_text(self) -> str:
         """Get the extracted plain text."""
-        return "\n".join(self.text_parts)
+        self._flush_line()
+        return "\n".join(self._lines)
 
 
 def normalize_unicode_to_ascii(text: str) -> str:

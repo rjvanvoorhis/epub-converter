@@ -78,10 +78,12 @@ class FFmpegAudioProcessor:
             raise RuntimeError(f"Failed to get audio duration: {e}") from e
 
     def merge_audio_files(self, audio_files: list[Path], output_path: Path) -> None:
-        """Merge multiple audio files into a single file.
+        """Merge one or more audio files into a single file.
 
         Files are merged in the order provided. Creates a temporary concat file
-        for ffmpeg to process.
+        for ffmpeg to process. Inputs are re-encoded (not stream-copied) when
+        the output is MP3, since VoiceBox may return other formats (e.g. WAV)
+        that can't be copied directly into an MP3 container.
 
         Args:
             audio_files: List of audio file paths to merge.
@@ -100,11 +102,6 @@ class FFmpegAudioProcessor:
             if not audio_file.exists():
                 raise FileNotFoundError(f"Audio file not found: {audio_file}")
 
-        # If only one file, copy it to output
-        if len(audio_files) == 1:
-            output_path.write_bytes(audio_files[0].read_bytes())
-            return
-
         # Create a temporary concat file for ffmpeg
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".txt", delete=False
@@ -115,8 +112,14 @@ class FFmpegAudioProcessor:
                 concat_file.write(f"file '{file_path}'\n")
             concat_path = concat_file.name
 
+        codec_args = (
+            ["-c:a", "libmp3lame", "-q:a", "2"]
+            if output_path.suffix.lower() == ".mp3"
+            else ["-c", "copy"]
+        )
+
         try:
-            # Use ffmpeg to concatenate the files
+            # Use ffmpeg to concatenate the files, transcoding as needed
             subprocess.run(
                 [
                     "ffmpeg",
@@ -126,8 +129,7 @@ class FFmpegAudioProcessor:
                     "0",
                     "-i",
                     concat_path,
-                    "-c",
-                    "copy",
+                    *codec_args,
                     "-y",
                     str(output_path),
                 ],

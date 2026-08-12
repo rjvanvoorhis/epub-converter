@@ -43,7 +43,9 @@ class ConvertEPUBToAudiobookCommand:
         Args:
             *args: Positional arguments (not used).
             **kwargs: Named arguments:
-                - epub_file: Path to EPUB file
+                - input_path: Path to an EPUB file, or to a directory of
+                  chapter .txt files (the output of the extract-chapters
+                  command)
                 - output_file: Path for output MP3 file
                 - voice_profile_id: ID of voice profile to use
                 - language: Language code (default: 'en')
@@ -57,7 +59,7 @@ class ConvertEPUBToAudiobookCommand:
             RuntimeError: If execution fails.
         """
         try:
-            epub_file = Path(kwargs.get("epub_file"))
+            input_path = Path(kwargs.get("input_path"))
             output_file = Path(kwargs.get("output_file"))
             voice_profile_id = kwargs.get("voice_profile_id")
             language = kwargs.get("language", "en")
@@ -67,7 +69,8 @@ class ConvertEPUBToAudiobookCommand:
                 return "Error: voice_profile_id is required"
 
             input_dto = ConvertEPUBToAudiobookInput(
-                epub_file_path=epub_file,
+                epub_file_path=None if input_path.is_dir() else input_path,
+                text_directory_path=input_path if input_path.is_dir() else None,
                 output_file_path=output_file,
                 voice_profile_id=voice_profile_id,
                 language=language,
