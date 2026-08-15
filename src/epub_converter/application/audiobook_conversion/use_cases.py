@@ -9,13 +9,14 @@ from epub_converter.domain.audiobook_conversion.interfaces import (
     AudiobookRepository,
     AudioProcessor,
     TextChunker,
-    VoiceBoxService,
+    TTSProvider,
 )
 from epub_converter.domain.audiobook_conversion.value_objects import AudioFile
 from epub_converter.domain.epub_extraction.interfaces import EPUBRepository
 from epub_converter.presentation.text_utils import (
-    strip_html_tags,
+    apply_pronunciation_dictionary,
     normalize_text_characters,
+    strip_html_tags,
 )
 
 from .dtos import (
@@ -39,7 +40,7 @@ class ConvertEPUBToAudiobookUseCase:
     def __init__(
         self,
         epub_repository: EPUBRepository,
-        voicebox_service: VoiceBoxService,
+        tts_provider: TTSProvider,
         text_chunker: TextChunker,
         audio_processor: AudioProcessor,
         audiobook_repository: AudiobookRepository,
@@ -48,13 +49,13 @@ class ConvertEPUBToAudiobookUseCase:
 
         Args:
             epub_repository: Repository for loading EPUB files.
-            voicebox_service: Service for generating audio.
+            tts_provider: Backend for generating audio from text.
             text_chunker: Service for chunking text.
             audio_processor: Service for processing audio files.
             audiobook_repository: Repository for saving audiobooks.
         """
         self._epub_repository = epub_repository
-        self._voicebox_service = voicebox_service
+        self._tts_provider = tts_provider
         self._text_chunker = text_chunker
         self._audio_processor = audio_processor
         self._audiobook_repository = audiobook_repository
@@ -97,6 +98,12 @@ class ConvertEPUBToAudiobookUseCase:
             # Clean the text (HTML stripping and character normalization)
             clean_content = normalize_text_characters(strip_html_tags(chapter["content"]))
 
+            # Apply pronunciation overrides for known words/phrases
+            if input_dto.pronunciation_dictionary:
+                clean_content = apply_pronunciation_dictionary(
+                    clean_content, input_dto.pronunciation_dictionary
+                )
+
             # Chunk the chapter text
             chunks = self._text_chunker.chunk_text(
                 clean_content, input_dto.chunk_size
@@ -105,7 +112,7 @@ class ConvertEPUBToAudiobookUseCase:
             # Generate audio for each chunk
             chunk_audio_files: list[Path] = []
             for chunk in chunks:
-                audio_data = self._voicebox_service.generate_speech(
+                audio_data = self._tts_provider.generate_speech(
                     chunk.text,
                     input_dto.voice_profile_id,
                     input_dto.language,
@@ -200,13 +207,13 @@ class ConvertEPUBToAudiobookUseCase:
 class ListVoiceProfilesUseCase:
     """Use case for listing available voice profiles."""
 
-    def __init__(self, voicebox_service: VoiceBoxService) -> None:
+    def __init__(self, tts_provider: TTSProvider) -> None:
         """Initialize the use case.
 
         Args:
-            voicebox_service: Service for retrieving voice profiles.
+            tts_provider: Backend for retrieving voice profiles.
         """
-        self._voicebox_service = voicebox_service
+        self._tts_provider = tts_provider
 
     def execute(self) -> ListVoiceProfilesOutput:
         """Execute the list voice profiles use case.
@@ -217,7 +224,7 @@ class ListVoiceProfilesUseCase:
         Raises:
             RuntimeError: If unable to retrieve profiles.
         """
-        profiles = self._voicebox_service.get_available_profiles()
+        profiles = self._tts_provider.get_available_profiles()
 
         profiles_data = [
             {

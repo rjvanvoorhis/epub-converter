@@ -29,7 +29,7 @@ from epub_converter.domain.epub_extraction.entities import Chapter, EPUBFile
 
 from tests.conftest import (
     MockEPUBRepository,
-    MockVoiceBoxService,
+    MockTTSProvider,
     MockTextChunker,
     MockAudioProcessor,
     MockAudiobookRepository,
@@ -41,8 +41,8 @@ class TestListVoiceProfilesUseCase:
 
     def test_list_voice_profiles_success(self) -> None:
         """Test successfully listing voice profiles."""
-        mock_voicebox = MockVoiceBoxService()
-        mock_voicebox.add_profile(
+        mock_tts_provider = MockTTSProvider()
+        mock_tts_provider.add_profile(
             AudioProfile(
                 id=AudioProfileId("voice_1"),
                 name="Deep Voice",
@@ -51,7 +51,7 @@ class TestListVoiceProfilesUseCase:
             )
         )
 
-        use_case = ListVoiceProfilesUseCase(mock_voicebox)
+        use_case = ListVoiceProfilesUseCase(mock_tts_provider)
         output = use_case.execute()
 
         assert isinstance(output, ListVoiceProfilesOutput)
@@ -62,9 +62,9 @@ class TestListVoiceProfilesUseCase:
 
     def test_list_voice_profiles_empty(self) -> None:
         """Test listing when no profiles configured."""
-        mock_voicebox = MockVoiceBoxService()
+        mock_tts_provider = MockTTSProvider()
 
-        use_case = ListVoiceProfilesUseCase(mock_voicebox)
+        use_case = ListVoiceProfilesUseCase(mock_tts_provider)
         output = use_case.execute()
 
         assert output.profile_count == 2  # Default profiles
@@ -72,10 +72,10 @@ class TestListVoiceProfilesUseCase:
 
     def test_list_voice_profiles_multiple(self) -> None:
         """Test listing multiple voice profiles."""
-        mock_voicebox = MockVoiceBoxService()
+        mock_tts_provider = MockTTSProvider()
 
         for i in range(3):
-            mock_voicebox.add_profile(
+            mock_tts_provider.add_profile(
                 AudioProfile(
                     id=AudioProfileId(f"voice_{i}"),
                     name=f"Voice {i}",
@@ -84,19 +84,19 @@ class TestListVoiceProfilesUseCase:
                 )
             )
 
-        use_case = ListVoiceProfilesUseCase(mock_voicebox)
+        use_case = ListVoiceProfilesUseCase(mock_tts_provider)
         output = use_case.execute()
 
         assert output.profile_count == 3
 
     def test_list_voice_profiles_calls_service(self) -> None:
         """Test that use case calls VoiceBox service."""
-        mock_voicebox = MockVoiceBoxService()
+        mock_tts_provider = MockTTSProvider()
 
-        use_case = ListVoiceProfilesUseCase(mock_voicebox)
+        use_case = ListVoiceProfilesUseCase(mock_tts_provider)
         use_case.execute()
 
-        assert mock_voicebox.was_get_profiles_called()
+        assert mock_tts_provider.was_get_profiles_called()
 
 
 class TestConvertEPUBToAudiobookUseCase:
@@ -110,7 +110,7 @@ class TestConvertEPUBToAudiobookUseCase:
 
         # Setup mocks
         mock_epub_repo = MockEPUBRepository()
-        mock_voicebox = MockVoiceBoxService()
+        mock_tts_provider = MockTTSProvider()
         mock_chunker = MockTextChunker()
         mock_audio_proc = MockAudioProcessor()
         mock_audiobook_repo = MockAudiobookRepository()
@@ -125,7 +125,7 @@ class TestConvertEPUBToAudiobookUseCase:
 
         use_case = ConvertEPUBToAudiobookUseCase(
             epub_repository=mock_epub_repo,
-            voicebox_service=mock_voicebox,
+            tts_provider=mock_tts_provider,
             text_chunker=mock_chunker,
             audio_processor=mock_audio_proc,
             audiobook_repository=mock_audiobook_repo,
@@ -155,7 +155,7 @@ class TestConvertEPUBToAudiobookUseCase:
         """Test conversion with invalid EPUB path."""
         use_case = ConvertEPUBToAudiobookUseCase(
             epub_repository=MockEPUBRepository(),
-            voicebox_service=MockVoiceBoxService(),
+            tts_provider=MockTTSProvider(),
             text_chunker=MockTextChunker(),
             audio_processor=MockAudioProcessor(),
             audiobook_repository=MockAudiobookRepository(),
@@ -188,7 +188,7 @@ class TestConvertEPUBToAudiobookUseCase:
         epub_file.write_bytes(b"fake epub content")
 
         mock_epub_repo = MockEPUBRepository()
-        mock_voicebox = MockVoiceBoxService()
+        mock_tts_provider = MockTTSProvider()
         mock_chunker = MockTextChunker()
         mock_audio_proc = MockAudioProcessor()
         mock_audiobook_repo = MockAudiobookRepository()
@@ -203,7 +203,7 @@ class TestConvertEPUBToAudiobookUseCase:
 
         use_case = ConvertEPUBToAudiobookUseCase(
             epub_repository=mock_epub_repo,
-            voicebox_service=mock_voicebox,
+            tts_provider=mock_tts_provider,
             text_chunker=mock_chunker,
             audio_processor=mock_audio_proc,
             audiobook_repository=mock_audiobook_repo,
@@ -220,7 +220,7 @@ class TestConvertEPUBToAudiobookUseCase:
             use_case.execute(input_dto)
 
             # Verify VoiceBox was called
-            generate_calls = mock_voicebox.get_generate_calls()
+            generate_calls = mock_tts_provider.get_generate_calls()
             assert len(generate_calls) > 0
 
             # Verify all calls have correct profile and language
@@ -230,6 +230,45 @@ class TestConvertEPUBToAudiobookUseCase:
                 assert engine == "kokoro"
                 assert len(text) > 0
 
+    def test_convert_epub_applies_pronunciation_dictionary(self, tmp_path: Path) -> None:
+        """Test that pronunciation dictionary words are replaced before speech generation."""
+        epub_file = tmp_path / "test.epub"
+        epub_file.write_bytes(b"fake epub content")
+
+        mock_epub_repo = MockEPUBRepository()
+        mock_tts_provider = MockTTSProvider()
+        mock_chunker = MockTextChunker()
+        mock_audio_proc = MockAudioProcessor()
+        mock_audiobook_repo = MockAudiobookRepository()
+
+        mock_audio_proc.set_audio_duration(Path("/tmp/chapter_0.mp3"), 200.0)
+        mock_audio_proc.set_audio_duration(Path("/tmp/chapter_1.mp3"), 250.0)
+
+        use_case = ConvertEPUBToAudiobookUseCase(
+            epub_repository=mock_epub_repo,
+            tts_provider=mock_tts_provider,
+            text_chunker=mock_chunker,
+            audio_processor=mock_audio_proc,
+            audiobook_repository=mock_audiobook_repo,
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            input_dto = ConvertEPUBToAudiobookInput(
+                epub_file_path=epub_file,
+                output_file_path=Path(temp_dir) / "output.mp3",
+                voice_profile_id="voice_1",
+                pronunciation_dictionary={"chapter": "kˈæptər"},
+            )
+
+            use_case.execute(input_dto)
+
+            generate_calls = mock_tts_provider.get_generate_calls()
+            assert len(generate_calls) > 0
+            for text, _, _, _ in generate_calls:
+                assert "[chapter](/kˈæptər/)" in text
+                assert "chapter one" not in text
+                assert "chapter two" not in text
+
     def test_convert_epub_calls_text_chunker(self, tmp_path: Path) -> None:
         """Test that use case calls text chunker for each chapter."""
         # Create temporary EPUB file
@@ -237,7 +276,7 @@ class TestConvertEPUBToAudiobookUseCase:
         epub_file.write_bytes(b"fake epub content")
 
         mock_epub_repo = MockEPUBRepository()
-        mock_voicebox = MockVoiceBoxService()
+        mock_tts_provider = MockTTSProvider()
         mock_chunker = MockTextChunker()
         mock_audio_proc = MockAudioProcessor()
         mock_audiobook_repo = MockAudiobookRepository()
@@ -252,7 +291,7 @@ class TestConvertEPUBToAudiobookUseCase:
 
         use_case = ConvertEPUBToAudiobookUseCase(
             epub_repository=mock_epub_repo,
-            voicebox_service=mock_voicebox,
+            tts_provider=mock_tts_provider,
             text_chunker=mock_chunker,
             audio_processor=mock_audio_proc,
             audiobook_repository=mock_audiobook_repo,
@@ -279,7 +318,7 @@ class TestConvertEPUBToAudiobookUseCase:
         epub_file.write_bytes(b"fake epub content")
 
         mock_epub_repo = MockEPUBRepository()
-        mock_voicebox = MockVoiceBoxService()
+        mock_tts_provider = MockTTSProvider()
         mock_chunker = MockTextChunker()
         mock_audio_proc = MockAudioProcessor()
         mock_audiobook_repo = MockAudiobookRepository()
@@ -294,7 +333,7 @@ class TestConvertEPUBToAudiobookUseCase:
 
         use_case = ConvertEPUBToAudiobookUseCase(
             epub_repository=mock_epub_repo,
-            voicebox_service=mock_voicebox,
+            tts_provider=mock_tts_provider,
             text_chunker=mock_chunker,
             audio_processor=mock_audio_proc,
             audiobook_repository=mock_audiobook_repo,
@@ -321,7 +360,7 @@ class TestConvertEPUBToAudiobookUseCase:
         epub_file.write_bytes(b"fake epub content")
 
         mock_epub_repo = MockEPUBRepository()
-        mock_voicebox = MockVoiceBoxService()
+        mock_tts_provider = MockTTSProvider()
         mock_chunker = MockTextChunker()
         mock_audio_proc = MockAudioProcessor()
         mock_audiobook_repo = MockAudiobookRepository()
@@ -336,7 +375,7 @@ class TestConvertEPUBToAudiobookUseCase:
 
         use_case = ConvertEPUBToAudiobookUseCase(
             epub_repository=mock_epub_repo,
-            voicebox_service=mock_voicebox,
+            tts_provider=mock_tts_provider,
             text_chunker=mock_chunker,
             audio_processor=mock_audio_proc,
             audiobook_repository=mock_audiobook_repo,

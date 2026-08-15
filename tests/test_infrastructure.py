@@ -3,14 +3,20 @@
 Tests concrete implementations without requiring external services.
 """
 
-import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import MagicMock, patch
 
+import pytest
+import requests
+
+from epub_converter.domain.audiobook_conversion.value_objects import TextChunk
+from epub_converter.infrastructure.audiobook_conversion.fastkoko_service import (
+    FastKokoApiService,
+)
 from epub_converter.infrastructure.audiobook_conversion.voicebox_service import (
     TextChunkerService,
 )
-from epub_converter.domain.audiobook_conversion.value_objects import TextChunk
 
 
 class TestTextChunkerService:
@@ -259,3 +265,108 @@ class TestTextChunkerPerformance:
         for chunk in chunks:
             assert chunk.sequence >= 0
             assert len(chunk.text) > 0
+
+
+class TestFastKokoApiService:
+    """Test FastKoko TTS provider implementation."""
+
+    def test_generate_speech_empty_text_raises_error(self) -> None:
+        """Test that empty text raises an error before any request is made."""
+        service = FastKokoApiService()
+
+        with pytest.raises(ValueError, match="Text cannot be empty"):
+            service.generate_speech("   ", "af_bella", "en")
+
+    def test_generate_speech_empty_profile_id_raises_error(self) -> None:
+        """Test that an empty voice id raises an error before any request is made."""
+        service = FastKokoApiService()
+
+        with pytest.raises(ValueError, match="profile_id cannot be empty"):
+            service.generate_speech("Hello", "   ", "en")
+
+    @patch(
+        "epub_converter.infrastructure.audiobook_conversion.fastkoko_service.requests.post"
+    )
+    def test_generate_speech_posts_expected_payload(self, mock_post: MagicMock) -> None:
+        """Test that the FastKoko speech endpoint is called with the right payload."""
+        mock_response = MagicMock()
+        mock_response.iter_content.return_value = [b"abc", b"", b"def"]
+        mock_post.return_value = mock_response
+
+        service = FastKokoApiService(base_url="http://localhost:8880")
+        result = service.generate_speech("Hello world", "af_bella", "en")
+
+        assert result == b"abcdef"
+        mock_response.raise_for_status.assert_called_once()
+
+        args, kwargs = mock_post.call_args
+        assert args[0] == "http://localhost:8880/v1/audio/speech"
+        assert kwargs["json"] == {
+            "input": "Hello world",
+            "voice": "af_bella",
+            "response_format": "mp3",
+        }
+
+    @patch(
+        "epub_converter.infrastructure.audiobook_conversion.fastkoko_service.requests.post"
+    )
+    def test_generate_speech_wraps_request_exception(self, mock_post: MagicMock) -> None:
+        """Test that a network failure is wrapped in a RuntimeError."""
+        mock_post.side_effect = requests.RequestException("boom")
+        service = FastKokoApiService()
+
+        with pytest.raises(RuntimeError, match="Failed to generate speech"):
+            service.generate_speech("Hello", "af_bella", "en")
+
+    @patch(
+        "epub_converter.infrastructure.audiobook_conversion.fastkoko_service.requests.get"
+    )
+    def test_get_available_profiles_maps_voices(self, mock_get: MagicMock) -> None:
+        """Test that voice entries ({id, name} objects) map to AudioProfile entries."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "voices": [
+                {"id": "af_bella", "name": "af_bella"},
+                {"id": "bf_emma", "name": "bf_emma"},
+                {"id": "jf_alpha", "name": "jf_alpha"},
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        service = FastKokoApiService()
+        profiles = service.get_available_profiles()
+
+        assert [p.id.value for p in profiles] == ["af_bella", "bf_emma", "jf_alpha"]
+        assert profiles[0].language == "en"  # af -> American English
+        assert profiles[1].language == "en"  # bf -> British English
+        assert profiles[2].language == "ja"  # jf -> Japanese
+
+    @patch(
+        "epub_converter.infrastructure.audiobook_conversion.fastkoko_service.requests.get"
+    )
+    def test_get_available_profiles_tolerates_bare_voice_names(
+        self, mock_get: MagicMock
+    ) -> None:
+        """Test that a bare voice-name string list is still handled."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"voices": ["af_bella", "unknown_voice"]}
+        mock_get.return_value = mock_response
+
+        service = FastKokoApiService()
+        profiles = service.get_available_profiles()
+
+        assert [p.id.value for p in profiles] == ["af_bella", "unknown_voice"]
+        assert profiles[1].language == "en"  # unrecognized prefix falls back to en
+
+    @patch(
+        "epub_converter.infrastructure.audiobook_conversion.fastkoko_service.requests.get"
+    )
+    def test_get_available_profiles_wraps_request_exception(
+        self, mock_get: MagicMock
+    ) -> None:
+        """Test that a network failure is wrapped in a RuntimeError."""
+        mock_get.side_effect = requests.RequestException("boom")
+        service = FastKokoApiService()
+
+        with pytest.raises(RuntimeError, match="Failed to retrieve voice profiles"):
+            service.get_available_profiles()

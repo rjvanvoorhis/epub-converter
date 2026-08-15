@@ -19,6 +19,7 @@ class ConvertEPUBToAudiobookInput:
     language: str = "en"
     chunk_size: int = 45000
     engine: str = "kokoro"
+    pronunciation_dictionary: Optional[dict[str, str]] = None
 
     def __post_init__(self) -> None:
         """Validate input."""

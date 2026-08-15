@@ -1,6 +1,9 @@
 """Utility functions for text processing."""
 
+import json
+import re
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Optional
 
 # Tags whose boundaries represent real line/paragraph breaks. Text inside
@@ -155,3 +158,72 @@ def normalize_text_characters(text: str) -> str:
         Text with Unicode characters converted to ASCII equivalents
     """
     return normalize_unicode_to_ascii(text)
+
+
+def load_pronunciation_dictionary(path: Path) -> dict[str, str]:
+    """Load a pronunciation dictionary from a JSON file.
+
+    The file must contain a flat JSON object mapping words or phrases (e.g.
+    names, place names) to their IPA pronunciation, e.g.
+    ``{"Worcester": "wˈʊstər"}``.
+
+    Args:
+        path: Path to the JSON pronunciation dictionary file.
+
+    Returns:
+        Mapping of word/phrase to IPA pronunciation.
+
+    Raises:
+        ValueError: If the file is not valid JSON or is not a flat object of
+            string keys to string values.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid pronunciation dictionary JSON in {path}: {e}")
+
+    if not isinstance(data, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in data.items()
+    ):
+        raise ValueError(
+            f"Pronunciation dictionary must be a flat JSON object mapping "
+            f"words to IPA strings: {path}"
+        )
+
+    return data
+
+
+def apply_pronunciation_dictionary(text: str, dictionary: dict[str, str]) -> str:
+    """Replace known words/phrases with TTS phoneme control tokens.
+
+    Each occurrence of a dictionary key is matched as a whole word (case
+    insensitive) and replaced with a ``[word](/ipa/)`` token — the syntax
+    understood by TTS engines such as Kokoro to override
+    grapheme-to-phoneme conversion with an explicit IPA pronunciation. The
+    original casing of the matched text is preserved in the token.
+
+    Args:
+        text: Plain text to process.
+        dictionary: Mapping of word/phrase to IPA pronunciation.
+
+    Returns:
+        Text with dictionary words/phrases replaced by phoneme control
+        tokens.
+    """
+    if not text or not dictionary:
+        return text
+
+    # Longest key first so overlapping entries (e.g. "Worcester" and
+    # "Worcestershire") don't get partially replaced by the shorter one.
+    words = sorted(dictionary, key=len, reverse=True)
+    pattern = re.compile(
+        "|".join(rf"\b{re.escape(word)}\b" for word in words), re.IGNORECASE
+    )
+    lookup = {word.lower(): ipa for word, ipa in dictionary.items()}
+
+    def _replace(match: "re.Match[str]") -> str:
+        matched_text = match.group(0)
+        ipa = lookup[matched_text.lower()]
+        return f"[{matched_text}](/{ipa}/)"
+
+    return pattern.sub(_replace, text)

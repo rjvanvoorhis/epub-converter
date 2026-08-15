@@ -11,20 +11,22 @@ from .entities import Audiobook
 from .value_objects import AudioFile, AudioProfile, TextChunk
 
 
-class VoiceBoxService(Protocol):
-    """Interface for interacting with the VoiceBox API.
+class TTSProvider(Protocol):
+    """Interface for a text-to-speech backend.
 
-    Handles voice profile retrieval and text-to-speech generation.
+    Handles voice profile retrieval and text-to-speech generation. Concrete
+    implementations adapt a specific TTS API (e.g. VoiceBox, FastKoko) to
+    this common contract.
     """
 
     def get_available_profiles(self) -> list[AudioProfile]:
-        """Get all available voice profiles from VoiceBox.
+        """Get all available voice profiles from the TTS backend.
 
         Returns:
             List of available audio profiles.
 
         Raises:
-            RuntimeError: If unable to connect to VoiceBox service.
+            RuntimeError: If unable to connect to the TTS backend.
         """
         ...
 
@@ -38,6 +40,8 @@ class VoiceBoxService(Protocol):
             profile_id: The ID of the voice profile to use.
             language: The language code (e.g., 'en', 'es').
             engine: The speech synthesis engine to use (default: 'kokoro').
+                Backends that don't distinguish between engines may ignore
+                this parameter.
 
         Returns:
             The generated audio data in MP3 format.

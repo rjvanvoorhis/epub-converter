@@ -17,6 +17,9 @@ from epub_converter.application.epub_extraction.use_cases import (
 from epub_converter.infrastructure.audiobook_conversion.audio_processor import (
     FFmpegAudioProcessor,
 )
+from epub_converter.infrastructure.audiobook_conversion.fastkoko_service import (
+    FastKokoApiService,
+)
 from epub_converter.infrastructure.audiobook_conversion.repository import (
     AudiobookFileRepository,
 )
@@ -44,11 +47,22 @@ class Container:
     Manages the creation and wiring of all application dependencies.
     """
 
-    def __init__(self, voicebox_url: str = "http://127.0.0.1:17493") -> None:
+    def __init__(
+        self,
+        tts_provider: str = "fastkoko",
+        voicebox_url: str = "http://127.0.0.1:17493",
+        fastkoko_url: str = "http://127.0.0.1:8880",
+    ) -> None:
         """Initialize the container and wire dependencies.
 
         Args:
+            tts_provider: Which TTS backend to use ('voicebox' or
+                'fastkoko').
             voicebox_url: Base URL for the VoiceBox API service.
+            fastkoko_url: Base URL for the FastKoko API service.
+
+        Raises:
+            ValueError: If tts_provider is not a recognized backend.
         """
         # EPUB Extraction Infrastructure
         self._epub_repository = EbookLibEPUBRepository()
@@ -58,7 +72,14 @@ class Container:
         self._extract_chapter_use_case = ExtractChapterUseCase(self._epub_repository)
 
         # Audiobook Conversion Infrastructure
-        self._voicebox_service = VoiceBoxApiService(base_url=voicebox_url)
+        if tts_provider == "voicebox":
+            self._tts_provider = VoiceBoxApiService(base_url=voicebox_url)
+        elif tts_provider == "fastkoko":
+            self._tts_provider = FastKokoApiService(base_url=fastkoko_url)
+        else:
+            raise ValueError(
+                f"Unknown tts_provider: {tts_provider!r} (expected 'voicebox' or 'fastkoko')"
+            )
         self._text_chunker = TextChunkerService()
         self._audio_processor = FFmpegAudioProcessor()
         self._audiobook_repository = AudiobookFileRepository(
@@ -68,13 +89,13 @@ class Container:
         # Audiobook Conversion Use Cases
         self._convert_audiobook_use_case = ConvertEPUBToAudiobookUseCase(
             epub_repository=self._epub_repository,
-            voicebox_service=self._voicebox_service,
+            tts_provider=self._tts_provider,
             text_chunker=self._text_chunker,
             audio_processor=self._audio_processor,
             audiobook_repository=self._audiobook_repository,
         )
         self._list_voices_use_case = ListVoiceProfilesUseCase(
-            voicebox_service=self._voicebox_service
+            tts_provider=self._tts_provider
         )
 
         # CLI Controller

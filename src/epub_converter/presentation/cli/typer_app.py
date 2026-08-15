@@ -12,7 +12,11 @@ from epub_converter.composition.container import Container
 from epub_converter.application.audiobook_conversion.dtos import (
     ConvertEPUBToAudiobookInput,
 )
-from epub_converter.presentation.text_utils import strip_html_tags
+from epub_converter.presentation.text_utils import (
+    apply_pronunciation_dictionary,
+    load_pronunciation_dictionary,
+    strip_html_tags,
+)
 
 app = typer.Typer(
     name="epub-converter",
@@ -25,11 +29,17 @@ app = typer.Typer(
 _container: Optional[Container] = None
 
 
-def get_container() -> Container:
-    """Get or create the application container."""
+def get_container(tts_provider: str = "fastkoko") -> Container:
+    """Get or create the application container.
+
+    Args:
+        tts_provider: Which TTS backend to wire up ('voicebox' or
+            'fastkoko'). Only takes effect the first time the container is
+            created in this process.
+    """
     global _container
     if _container is None:
-        _container = Container()
+        _container = Container(tts_provider=tts_provider)
     return _container
 
 
@@ -82,6 +92,22 @@ def convert_to_audiobook(
         "-e",
         help="Speech synthesis engine to use",
     ),
+    pronunciation_dict: Optional[Path] = typer.Option(
+        None,
+        "--pronunciation-dict",
+        "-P",
+        help=(
+            'Path to a JSON pronunciation dictionary mapping words/names to '
+            'IPA pronunciation, e.g. {"Worcester": "wˈʊstər"}'
+        ),
+        exists=True,
+        dir_okay=False,
+    ),
+    tts_provider: str = typer.Option(
+        "fastkoko",
+        "--tts-provider",
+        help="TTS backend to use for speech synthesis",
+    ),
 ) -> None:
     """Convert an EPUB file, or a directory of chapter text files, to an audiobook in MP3 format.
 
@@ -115,8 +141,13 @@ def convert_to_audiobook(
             output_file = source.with_suffix(".mp3")
 
         # Get use case from container
-        container = get_container()
+        container = get_container(tts_provider=tts_provider)
         use_case = container.convert_audiobook_use_case
+
+        # Load pronunciation dictionary, if provided
+        pronunciation_dictionary = None
+        if pronunciation_dict is not None:
+            pronunciation_dictionary = load_pronunciation_dictionary(pronunciation_dict)
 
         # Create input DTO and execute
         input_dto = ConvertEPUBToAudiobookInput(
@@ -127,6 +158,7 @@ def convert_to_audiobook(
             language=language,
             chunk_size=chunk_size,
             engine=engine,
+            pronunciation_dictionary=pronunciation_dictionary,
         )
 
         output_dto = use_case.execute(input_dto)
@@ -157,14 +189,20 @@ def convert_to_audiobook(
 
 
 @app.command()
-def list_voices() -> None:
+def list_voices(
+    tts_provider: str = typer.Option(
+        "fastkoko",
+        "--tts-provider",
+        help="TTS backend to use for speech synthesis",
+    ),
+) -> None:
     """List available voice profiles for speech synthesis.
 
     Example:
         epub-converter list-voices
     """
     try:
-        container = get_container()
+        container = get_container(tts_provider=tts_provider)
         use_case = container.list_voice_profiles_use_case
 
         output = use_case.execute()
@@ -212,6 +250,17 @@ def extract_chapters(
         "-o",
         help="Output directory for extracted chapters (default: current directory)",
     ),
+    pronunciation_dict: Optional[Path] = typer.Option(
+        None,
+        "--pronunciation-dict",
+        "-P",
+        help=(
+            'Path to a JSON pronunciation dictionary mapping words/names to '
+            'IPA pronunciation, e.g. {"Worcester": "wˈʊstər"}'
+        ),
+        exists=True,
+        dir_okay=False,
+    ),
 ) -> None:
     """Extract chapters from an EPUB file.
 
@@ -229,10 +278,15 @@ def extract_chapters(
             ExtractChapterInput,
         )
 
+        # Load pronunciation dictionary, if provided
+        pronunciation_dictionary = None
+        if pronunciation_dict is not None:
+            pronunciation_dictionary = load_pronunciation_dictionary(pronunciation_dict)
+
         # Set default output directory to current directory
         if output_dir is None:
             output_dir = Path.cwd()
-        
+
         # Create output directory if it doesn't exist
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -277,6 +331,10 @@ def extract_chapters(
 
                     # Strip HTML tags and write chapter to file
                     plain_text = strip_html_tags(chapter_content.content)
+                    if pronunciation_dictionary:
+                        plain_text = apply_pronunciation_dictionary(
+                            plain_text, pronunciation_dictionary
+                        )
                     output_file.write_text(plain_text, encoding="utf-8")
 
                     typer.echo(

@@ -77,8 +77,8 @@ class MockEPUBRepository:
         return self._saved_file
 
 
-class MockVoiceBoxService:
-    """Mock VoiceBox service implementation."""
+class MockTTSProvider:
+    """Mock TTS provider implementation."""
 
     def __init__(self, audio_data: bytes | None = None) -> None:
         """Initialize with optional audio data."""
